@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vale Command Center | Sistema Integrado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f19;
+            color: #e2e8f0;
+            overflow: hidden;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Animations */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+        .status-ring::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2px solid currentColor;
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Iframe Container */
+        .app-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #0b0f19;
+        }
+
+        .module-tab {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .module-tab.active {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: #10b981;
+            color: #10b981;
+        }
+        .module-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #10b981;
+        }
+
+        /* Loading Animation */
+        .loader {
+            border: 3px solid rgba(16, 185, 129, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #10b981;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Data Bridge Status */
+        .bridge-indicator {
+            transition: all 0.3s ease;
+        }
+        .bridge-connected { background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981; }
+        .bridge-syncing { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border-color: #f59e0b; animation: pulse 2s infinite; }
+        .bridge-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; border-color: #ef4444; }
+
+        /* Grid Background */
+        .grid-bg {
+            background-image:
+                linear-gradient(rgba(30, 41, 59, 0.3) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(30, 41, 59, 0.3) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <!-- Top Navigation Bar -->
+    <header class="glass-panel border-b border-slate-700/50 z-50 flex-none">
+        <div class="flex items-center justify-between h-16 px-4">
+            <!-- Logo & Brand -->
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <i data-lucide="pickaxe" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-white tracking-tight">Vale Command Center</h1>
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="text-slate-400">Sistema Integrado</span>
+                        <span class="w-1 h-1 rounded-full bg-slate-600"></span>
+                        <span id="connectionStatus" class="text-emerald-400 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot"></span>
+                            Online
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Module Navigation -->
+            <nav class="flex items-center gap-1 bg-slate-800/50 rounded-lg p-1 border border-slate-700">
+                <button onclick="switchModule('overview')" id="tab-overview" class="module-tab active px-4 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white flex items-center gap-2 transition-all">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Visão Geral</span>
+                </button>
+                <button onclick="switchModule('fleet')" id="tab-fleet" class="module-tab px-4 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white flex items-center gap-2 transition-all">
+                    <i data-lucide="truck" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Frotas</span>
+                    <span id="badge-fleet" class="hidden px-1.5 py-0.5 bg-red-500 text-white text-[10px] rounded-full">0</span>
+                </button>
+                <button onclick="switchModule('generators')" id="tab-generators" class="module-tab px-4 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white flex items-center gap-2 transition-all">
+                    <i data-lucide="zap" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Geradores</span>
+                    <span id="badge-generators" class="hidden px-1.5 py-0.5 bg-amber-500 text-white text-[10px] rounded-full">0</span>
+                </button>
+                <button onclick="switchModule('telecom')" id="tab-telecom" class="module-tab px-4 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white flex items-center gap-2 transition-all">
+                    <i data-lucide="signal" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Telecom</span>
+                    <span id="badge-telecom" class="hidden px-1.5 py-0.5 bg-blue-500 text-white text-[10px] rounded-full">0</span>
+                </button>
+                <button onclick="switchModule('reports')" id="tab-reports" class="module-tab px-4 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white flex items-center gap-2 transition-all">
+                    <i data-lucide="camera" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Relatórios</span>
+                    <span id="badge-reports" class="hidden px-1.5 py-0.5 bg-emerald-500 text-white text-[10px] rounded-full">0</span>
+                </button>
+            </nav>
+
+            <!-- Right Controls -->
+            <div class="flex items-center gap-4">
+                <!-- Data Bridge Status -->
+                <div id="bridgeStatus" class="bridge-indicator bridge-connected px-3 py-1.5 rounded-full border text-xs font-medium flex items-center gap-2">
+                    <i data-lucide="database" class="w-3.5 h-3.5"></i>
+                    <span class="hidden md:inline">Firebase Sync</span>
+                </div>
+
+                <!-- Global Alerts -->
+                <button class="relative p-2 hover:bg-slate-800 rounded-lg transition-colors" onclick="toggleGlobalAlerts()">
+                    <i data-lucide="bell" class="w-5 h-5 text-slate-300"></i>
+                    <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full status-dot"></span>
+                </button>
+
+                <!-- Time -->
+                <div class="text-right hidden md:block">
+                    <div class="text-sm font-bold text-white mono" id="clock">00:00:00</div>
+                    <div class="text-[10px] text-slate-400 uppercase tracking-wider" id="date">--/--/----</div>
+                </div>
+
+                <!-- User -->
+                <div class="flex items-center gap-3 pl-4 border-l border-slate-700">
+                    <div class="text-right hidden lg:block">
+                        <div class="text-sm font-medium text-white">Operador</div>
+                        <div class="text-xs text-emerald-400">Turno A</div>
+                    </div>
+                    <div class="w-9 h-9 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center border border-slate-600">
+                        <i data-lucide="user" class="w-5 h-5 text-slate-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 relative overflow-hidden bg-slate-900">
+
+        <!-- Module: Overview (Dashboard Principal) -->
+        <div id="module-overview" class="module-content absolute inset-0 overflow-y-auto p-6">
+            <div class="max-w-[1920px] mx-auto space-y-6">
+
+                <!-- KPI Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                    <!-- Frota Card -->
+                    <div onclick="switchModule('fleet')" class="glass-panel rounded-xl p-5 border-l-4 border-blue-500 cursor-pointer hover:bg-slate-800/50 transition-all group">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <p class="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">Frota Ativa</p>
+                                <h3 class="text-2xl font-bold text-white mono" id="kpi-fleet-count">--</h3>
+                            </div>
+                            <div class="p-2 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 transition-colors">
+                                <i data-lucide="truck" class="w-5 h-5 text-blue-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-400">Eficiência</span>
+                            <span class="text-blue-400 font-bold" id="kpi-fleet-efficiency">--%</span>
+                        </div>
+                        <div class="mt-3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div id="kpi-fleet-bar" class="h-full bg-blue-500 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Geradores Card -->
+                    <div onclick="switchModule('generators')" class="glass-panel rounded-xl p-5 border-l-4 border-amber-500 cursor-pointer hover:bg-slate-800/50 transition-all group">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <p class="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">Geradores</p>
+                                <h3 class="text-2xl font-bold text-white mono" id="kpi-gen-count">--</h3>
+                            </div>
+                            <div class="p-2 bg-amber-500/10 rounded-lg group-hover:bg-amber-500/20 transition-colors">
+                                <i data-lucide="zap" class="w-5 h-5 text-amber-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-400">Potência Total</span>
+                            <span class="text-amber-400 font-bold" id="kpi-gen-power">-- MW</span>
+                        </div>
+                        <div class="mt-3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div id="kpi-gen-bar" class="h-full bg-amber-500 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Telecom Card -->
+                    <div onclick="switchModule('telecom')" class="glass-panel rounded-xl p-5 border-l-4 border-purple-500 cursor-pointer hover:bg-slate-800/50 transition-all group">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <p class="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">Conectividade</p>
+                                <h3 class="text-2xl font-bold text-white mono" id="kpi-telecom-status">--</h3>
+                            </div>
+                            <div class="p-2 bg-purple-500/10 rounded-lg group-hover:bg-purple-500/20 transition-colors">
+                                <i data-lucide="wifi" class="w-5 h-5 text-purple-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-400">Latência Média</span>
+                            <span class="text-purple-400 font-bold" id="kpi-telecom-latency">-- ms</span>
+                        </div>
+                        <div class="mt-3 flex gap-1">
+                            <div class="h-1.5 flex-1 bg-purple-500 rounded-full animate-pulse"></div>
+                            <div class="h-1.5 flex-1 bg-purple-500 rounded-full animate-pulse" style="animation-delay: 0.2s"></div>
+                            <div class="h-1.5 flex-1 bg-purple-500 rounded-full animate-pulse" style="animation-delay: 0.4s"></div>
+                        </div>
+                    </div>
+
+                    <!-- Relatórios Card -->
+                    <div onclick="switchModule('reports')" class="glass-panel rounded-xl p-5 border-l-4 border-emerald-500 cursor-pointer hover:bg-slate-800/50 transition-all group">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <p class="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">Relatórios</p>
+                                <h3 class="text-2xl font-bold text-white mono" id="kpi-reports-count">--</h3>
+                            </div>
+                            <div class="p-2 bg-emerald-500/10 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
+                                <i data-lucide="camera" class="w-5 h-5 text-emerald-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-400">Sincronizados</span>
+                            <span class="text-emerald-400 font-bold" id="kpi-reports-sync">--%</span>
+                        </div>
+                        <div class="mt-3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div id="kpi-reports-bar" class="h-full bg-emerald-500 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Critical Alerts -->
+                    <div class="glass-panel rounded-xl p-5 border-l-4 border-red-500 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-red-500/5 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                        <div class="flex justify-between items-start mb-3 relative z-10">
+                            <div>
+                                <p class="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">Alertas Críticos</p>
+                                <h3 class="text-2xl font-bold text-white mono" id="kpi-alerts">0</h3>
+                            </div>
+                            <div class="p-2 bg-red-500/10 rounded-lg animate-pulse">
+                                <i data-lucide="alert-octagon" class="w-5 h-5 text-red-400"></i>
+                            </div>
+                        </div>
+                        <div class="space-y-1 relative z-10" id="kpi-alerts-list">
+                            <p class="text-xs text-slate-500">Nenhum alerta crítico</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Integration Map -->
+                <div class="glass-panel rounded-xl p-6 border border-slate-700">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                                <i data-lucide="network" class="w-5 h-5 text-emerald-400"></i>
+                                Mapa de Integração de Sistemas
+                            </h2>
+                            <p class="text-sm text-slate-400 mt-1">Status das conexões com seus apps no Netlify</p>
+                        </div>
+                        <button onclick="refreshAllConnections()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-sm text-white transition-colors flex items-center gap-2">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            Sincronizar
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+                        <!-- Fleet Connection -->
+                        <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700 hover:border-blue-500/50 transition-all group">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="truck" class="w-6 h-6 text-blue-400"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white">Gestão de Frotas</h3>
+                                        <p class="text-xs text-slate-400">Netlify + Firebase</p>
+                                    </div>
+                                </div>
+                                <div id="status-fleet" class="px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot"></span>
+                                    Conectado
+                                </div>
+                            </div>
+                            <div class="space-y-3">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Último sync</span>
+                                    <span class="text-slate-300 mono" id="last-sync-fleet">--</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Dados recebidos</span>
+                                    <span class="text-blue-400 mono" id="data-fleet">0 registros</span>
+                                </div>
+                                <button onclick="switchModule('fleet')" class="w-full mt-2 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                                    Abrir Sistema
+                                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Generators Connection -->
+                        <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700 hover:border-amber-500/50 transition-all group">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="zap" class="w-6 h-6 text-amber-400"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white">Gestão de Geradores</h3>
+                                        <p class="text-xs text-slate-400">Netlify + Firebase</p>
+                                    </div>
+                                </div>
+                                <div id="status-generators" class="px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot"></span>
+                                    Conectado
+                                </div>
+                            </div>
+                            <div class="space-y-3">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Último sync</span>
+                                    <span class="text-slate-300 mono" id="last-sync-generators">--</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Consumo médio</span>
+                                    <span class="text-amber-400 mono" id="data-generators">0 L/h</span>
+                                </div>
+                                <button onclick="switchModule('generators')" class="w-full mt-2 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                                    Abrir Sistema
+                                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Telecom Connection -->
+                        <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700 hover:border-purple-500/50 transition-all group">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center border border-purple-500/20 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="signal" class="w-6 h-6 text-purple-400"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white">Telecom Impact</h3>
+                                        <p class="text-xs text-slate-400">Netlify + Firebase</p>
+                                    </div>
+                                </div>
+                                <div id="status-telecom" class="px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot"></span>
+                                    Conectado
+                                </div>
+                            </div>
+                            <div class="space-y-3">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Último sync</span>
+                                    <span class="text-slate-300 mono" id="last-sync-telecom">--</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Links ativos</span>
+                                    <span class="text-purple-400 mono" id="data-telecom">0/0</span>
+                                </div>
+                                <button onclick="switchModule('telecom')" class="w-full mt-2 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                                    Abrir Sistema
+                                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Reports Connection -->
+                        <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700 hover:border-emerald-500/50 transition-all group">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 group-hover:scale-110 transition-transform">
+                                        <i data-lucide="camera" class="w-6 h-6 text-emerald-400"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-white">Relatórios</h3>
+                                        <p class="text-xs text-slate-400">Netlify + Firebase</p>
+                                    </div>
+                                </div>
+                                <div id="status-reports" class="px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot"></span>
+                                    Conectado
+                                </div>
+                            </div>
+                            <div class="space-y-3">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Último sync</span>
+                                    <span class="text-slate-300 mono" id="last-sync-reports">--</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-400">Relatórios hoje</span>
+                                    <span class="text-emerald-400 mono" id="data-reports">0</span>
+                                </div>
+                                <button onclick="switchModule('reports')" class="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                                    Abrir Sistema
+                                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="glass-panel rounded-xl p-6 border border-slate-700">
+                        <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                            <i data-lucide="activity" class="w-5 h-5 text-emerald-400"></i>
+                            Atividade Recente (Todos os Sistemas)
+                        </h3>
+                        <div class="space-y-3 max-h-80 overflow-y-auto pr-2" id="global-activity-log">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <div class="glass-panel rounded-xl p-6 border border-slate-700">
+                        <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                            <i data-lucide="settings-2" class="w-5 h-5 text-blue-400"></i>
+                            Configurações de Integração
+                        </h3>
+                        <div class="space-y-4">
+                            <div class="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="text-sm font-medium text-white">Sync Automático</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" checked class="sr-only peer" onchange="toggleAutoSync(this)">
+                                        <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                                    </label>
+                                </div>
+                                <p class="text-xs text-slate-400">Sincroniza dados a cada 30 segundos</p>
+                            </div>
+
+                            <div class="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="text-sm font-medium text-white">Notificações Push</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" checked class="sr-only peer">
+                                        <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                                    </label>
+                                </div>
+                                <p class="text-xs text-slate-400">Alertas críticos de qualquer sistema</p>
+                            </div>
+
+                            <div class="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                                <div class="mb-4">
+                                    <label class="text-sm font-medium text-white block mb-2">URLs dos Sistemas</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <input type="text" id="url-fleet" placeholder="URL Gestão de Frotas" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="url-generators" placeholder="URL Geradores" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="url-telecom" placeholder="URL Telecom" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="url-reports" placeholder="URL Relatórios" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-sm font-medium text-white block mb-2">Firebase Config</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <input type="text" id="fb-apiKey" placeholder="API Key" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="fb-authDomain" placeholder="Auth Domain" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="fb-databaseURL" placeholder="Database URL" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none col-span-2">
+                                        <input type="text" id="fb-projectId" placeholder="Project ID" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="fb-storageBucket" placeholder="Storage Bucket" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="fb-messagingSenderId" placeholder="Messaging Sender ID" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                        <input type="text" id="fb-appId" placeholder="App ID" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                                    </div>
+                                </div>
+                                <button onclick="saveUrls()" class="mt-4 w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors">
+                                    Salvar e Recarregar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Module: Photo Reports (Iframe) -->
+        <div id="module-reports" class="module-content absolute inset-0 hidden">
+            <div class="absolute inset-0 bg-slate-900 flex flex-col">
+                <div class="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-sm text-slate-300">
+                        <i data-lucide="camera" class="w-4 h-4 text-emerald-400"></i>
+                        <span>Relatórios Fotográficos</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-slate-500">netlify.app</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="reloadIframe('reports')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="openExternal('reports')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 relative">
+                    <iframe id="iframe-reports" class="app-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+                    <div id="loader-reports" class="absolute inset-0 bg-slate-900 flex items-center justify-center">
+                        <div class="text-center">
+                            <div class="loader mx-auto mb-4"></div>
+                            <p class="text-slate-400 text-sm">Carregando Relatórios...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Module: Fleet Management (Iframe) -->
+        <div id="module-fleet" class="module-content absolute inset-0 hidden">
+            <div class="absolute inset-0 bg-slate-900 flex flex-col">
+                <div class="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-sm text-slate-300">
+                        <i data-lucide="truck" class="w-4 h-4 text-blue-400"></i>
+                        <span>Gestão de Frotas</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-slate-500">netlify.app</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="reloadIframe('fleet')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Recarregar">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="openExternal('fleet')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Abrir em nova aba">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 relative">
+                    <iframe id="iframe-fleet" class="app-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+                    <div id="loader-fleet" class="absolute inset-0 bg-slate-900 flex items-center justify-center">
+                        <div class="text-center">
+                            <div class="loader mx-auto mb-4"></div>
+                            <p class="text-slate-400 text-sm">Carregando Gestão de Frotas...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Module: Generators (Iframe) -->
+        <div id="module-generators" class="module-content absolute inset-0 hidden">
+            <div class="absolute inset-0 bg-slate-900 flex flex-col">
+                <div class="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-sm text-slate-300">
+                        <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+                        <span>Gestão de Geradores</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-slate-500">netlify.app</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="reloadIframe('generators')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="openExternal('generators')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 relative">
+                    <iframe id="iframe-generators" class="app-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+                    <div id="loader-generators" class="absolute inset-0 bg-slate-900 flex items-center justify-center">
+                        <div class="text-center">
+                            <div class="loader mx-auto mb-4"></div>
+                            <p class="text-slate-400 text-sm">Carregando Gestão de Geradores...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Module: Telecom (Iframe) -->
+        <div id="module-telecom" class="module-content absolute inset-0 hidden">
+            <div class="absolute inset-0 bg-slate-900 flex flex-col">
+                <div class="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-sm text-slate-300">
+                        <i data-lucide="signal" class="w-4 h-4 text-purple-400"></i>
+                        <span>Telecom Impact</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-slate-500">netlify.app</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="reloadIframe('telecom')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="openExternal('telecom')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 relative">
+                    <iframe id="iframe-telecom" class="app-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+                    <div id="loader-telecom" class="absolute inset-0 bg-slate-900 flex items-center justify-center">
+                        <div class="text-center">
+                            <div class="loader mx-auto mb-4"></div>
+                            <p class="text-slate-400 text-sm">Carregando Telecom Impact...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Global Alerts Panel (Slide-over) -->
+    <div id="global-alerts-panel" class="fixed inset-y-0 right-0 w-96 bg-slate-900 border-l border-slate-700 transform translate-x-full transition-transform duration-300 z-50 shadow-2xl">
+        <div class="h-full flex flex-col">
+            <div class="p-4 border-b border-slate-700 flex items-center justify-between bg-slate-800/50">
+                <h3 class="font-bold text-white flex items-center gap-2">
+                    <i data-lucide="bell" class="w-5 h-5 text-red-400"></i>
+                    Alertas Globais
+                </h3>
+                <button onclick="toggleGlobalAlerts()" class="p-1 hover:bg-slate-700 rounded text-slate-400">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-3" id="global-alerts-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Configuration
+        const config = {
+            urls: {
+                fleet: localStorage.getItem('url-fleet') || '',
+                generators: localStorage.getItem('url-generators') || '',
+                telecom: localStorage.getItem('url-telecom') || '',
+                reports: localStorage.getItem('url-reports') || ''
+            },
+            firebase: {
+                apiKey: localStorage.getItem('firebase-apiKey') || "YOUR_API_KEY",
+                authDomain: localStorage.getItem('firebase-authDomain') || "your-project.firebaseapp.com",
+                databaseURL: localStorage.getItem('firebase-databaseURL') || "https://your-project-default-rtdb.firebaseio.com",
+                projectId: localStorage.getItem('firebase-projectId') || "your-project",
+                storageBucket: localStorage.getItem('firebase-storageBucket') || "your-project.appspot.com",
+                messagingSenderId: localStorage.getItem('firebase-messagingSenderId') || "123456789",
+                appId: localStorage.getItem('firebase-appId') || "1:123456789:web:abcdef123456"
+            }
+        };
+
+        // State Management
+        let currentModule = 'overview';
+        let autoSyncInterval = null;
+        let firebaseApp = null;
+        let database = null;
+
+        // Initialize Firebase (if config is valid)
+        function initFirebase() {
+            try {
+                if (config.firebase.apiKey !== 'YOUR_API_KEY') {
+                    firebaseApp = firebase.initializeApp(config.firebase);
+                    database = firebase.database();
+                    console.log('Firebase initialized');
+                    startDataSync();
+                }
+            } catch (error) {
+                console.log('Firebase not configured, using demo mode');
+                startDemoMode();
+            }
+        }
+
+        // Clock
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').textContent = now.toLocaleTimeString('pt-BR', { hour12: false });
+            document.getElementById('date').textContent = now.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' });
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Module Switching
+        function switchModule(module) {
+            document.querySelectorAll('.module-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.module-tab').forEach(el => el.classList.remove('active'));
+
+            document.getElementById(`module-${module}`).classList.remove('hidden');
+            document.getElementById(`tab-${module}`).classList.add('active');
+
+            currentModule = module;
+
+            if (module !== 'overview' && config.urls[module]) {
+                loadIframe(module, config.urls[module]);
+            }
+
+            window.location.hash = module;
+        }
+
+        // Iframe Management
+        function loadIframe(module, url) {
+            const iframe = document.getElementById(`iframe-${module}`);
+            const loader = document.getElementById(`loader-${module}`);
+
+            if (!iframe.src || iframe.src !== url) {
+                iframe.src = url;
+
+                iframe.onload = () => {
+                    loader.style.display = 'none';
+                    updateLastSync(module);
+
+                    iframe.contentWindow.postMessage({
+                        type: 'HANDSHAKE',
+                        source: 'vale-command-center',
+                        timestamp: Date.now()
+                    }, '*');
+                };
+
+                iframe.onerror = () => {
+                    loader.innerHTML = `
+                        <div class="text-center p-8">
+                            <i data-lucide="alert-triangle" class="w-12 h-12 text-red-400 mx-auto mb-4"></i>
+                            <p class="text-red-400 font-medium mb-2">Erro ao carregar</p>
+                            <p class="text-slate-500 text-sm mb-4">Verifique a URL nas configurações</p>
+                            <button onclick="switchModule('overview')" class="px-4 py-2 bg-slate-700 text-white rounded-lg text-sm hover:bg-slate-600">
+                                Voltar ao Dashboard
+                            </button>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                };
+            }
+        }
+
+        function reloadIframe(module) {
+            const iframe = document.getElementById(`iframe-${module}`);
+            const loader = document.getElementById(`loader-${module}`);
+            loader.style.display = 'flex';
+            iframe.src = iframe.src;
+        }
+
+        function openExternal(module) {
+            if (config.urls[module]) {
+                window.open(config.urls[module], '_blank');
+            }
+        }
+
+        // Data Synchronization
+        function startDataSync() {
+            if (!database) return;
+
+            database.ref('fleet').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) updateFleetKPIs(data);
+            });
+
+            database.ref('generators').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) updateGeneratorsKPIs(data);
+            });
+
+            database.ref('telecom').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) updateTelecomKPIs(data);
+            });
+
+            database.ref('reports').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) updateReportsKPIs(data);
+            });
+
+            database.ref('alerts').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) updateGlobalAlerts(data);
+            });
+        }
+
+        // Demo Mode (when Firebase is not configured)
+        function startDemoMode() {
+            setInterval(() => {
+                const fleetCount = Math.floor(Math.random() * 5) + 40;
+                const fleetEff = Math.floor(Math.random() * 10) + 85;
+                document.getElementById('kpi-fleet-count').textContent = `${fleetCount}/45`;
+                document.getElementById('kpi-fleet-efficiency').textContent = `${fleetEff}%`;
+                document.getElementById('kpi-fleet-bar').style.width = `${fleetEff}%`;
+                document.getElementById('data-fleet').textContent = `${fleetCount} veículos`;
+
+                const genCount = Math.floor(Math.random() * 2) + 7;
+                const genPower = (Math.random() * 2 + 8).toFixed(1);
+                document.getElementById('kpi-gen-count').textContent = `${genCount}/10`;
+                document.getElementById('kpi-gen-power').textContent = `${genPower} MW`;
+                document.getElementById('kpi-gen-bar').style.width = `${genCount * 10}%`;
+                document.getElementById('data-generators').textContent = `${(Math.random() * 50 + 200).toFixed(0)} L/h`;
+
+                const latency = Math.floor(Math.random() * 20) + 10;
+                document.getElementById('kpi-telecom-status').textContent = '98%';
+                document.getElementById('kpi-telecom-latency').textContent = `${latency} ms`;
+                document.getElementById('data-telecom').textContent = '12/12';
+
+                const reportsCount = Math.floor(Math.random() * 10) + 150;
+                const reportsSync = Math.floor(Math.random() * 5) + 95;
+                document.getElementById('kpi-reports-count').textContent = reportsCount;
+                document.getElementById('kpi-reports-sync').textContent = `${reportsSync}%`;
+                document.getElementById('kpi-reports-bar').style.width = `${reportsSync}%`;
+                document.getElementById('data-reports').textContent = Math.floor(reportsCount / 10);
+
+                const now = new Date().toLocaleTimeString('pt-BR');
+                ['fleet', 'generators', 'telecom', 'reports'].forEach(mod => {
+                    const el = document.getElementById(`last-sync-${mod}`);
+                    if (el) el.textContent = now;
+                });
+
+            }, 5000);
+
+            setTimeout(() => {
+                addGlobalAlert({
+                    id: 1,
+                    system: 'fleet',
+                    level: 'warning',
+                    title: 'Manutenção Programada',
+                    message: 'Caminhão CAT 797F #12 agendado para manutenção às 14:00',
+                    time: '2 min atrás'
+                });
+            }, 3000);
+        }
+
+        // KPI Updates
+        function updateFleetKPIs(data) { console.log('Fleet data:', data); }
+        function updateGeneratorsKPIs(data) { console.log('Generators data:', data); }
+        function updateTelecomKPIs(data) { console.log('Telecom data:', data); }
+        function updateReportsKPIs(data) { console.log('Reports data:', data); }
+
+        // Global Alerts System
+        let globalAlerts = [];
+
+        function updateGlobalAlerts(data) {
+            globalAlerts = Object.values(data);
+            updateAlertsUI();
+        }
+
+        function addGlobalAlert(alert) {
+            globalAlerts.unshift(alert);
+            if (globalAlerts.length > 20) globalAlerts.pop();
+            updateAlertsUI();
+
+            const badge = document.getElementById(`badge-${alert.system}`);
+            if (badge) {
+                const count = parseInt(badge.textContent) || 0;
+                badge.textContent = count + 1;
+                badge.classList.remove('hidden');
+            }
+        }
+
+        function updateAlertsUI() {
+            const container = document.getElementById('global-alerts-list');
+            const criticalCount = globalAlerts.filter(a => a.level === 'critical').length;
+
+            document.getElementById('kpi-alerts').textContent = criticalCount;
+
+            if (globalAlerts.length === 0) {
+                container.innerHTML = '<p class="text-slate-500 text-center py-8">Nenhum alerta ativo</p>';
+                return;
+            }
+
+            container.innerHTML = globalAlerts.map(alert => `
+                <div class="p-3 bg-slate-800 rounded-lg border-l-4 ${
+                    alert.level === 'critical' ? 'border-red-500' :
+                    alert.level === 'warning' ? 'border-amber-500' : 'border-blue-500'
+                }">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="text-xs font-medium ${
+                            alert.level === 'critical' ? 'text-red-400' :
+                            alert.level === 'warning' ? 'text-amber-400' : 'text-blue-400'
+                        } uppercase">${alert.system}</span>
+                        <span class="text-xs text-slate-500">${alert.time}</span>
+                    </div>
+                    <h4 class="text-sm font-medium text-white mb-1">${alert.title}</h4>
+                    <p class="text-xs text-slate-400">${alert.message}</p>
+                </div>
+            `).join('');
+
+            updateActivityLog();
+        }
+
+        function updateActivityLog() {
+            const container = document.getElementById('global-activity-log');
+            const activities = [
+                { time: '10:42', system: 'fleet', event: 'Caminhão #12 iniciou carregamento' },
+                { time: '10:38', system: 'generators', event: 'Gerador #3 sincronizado à rede' },
+                { time: '10:15', system: 'telecom', event: 'Link de backup ativado - Torre Norte' },
+                { time: '09:58', system: 'fleet', event: 'Rota otimizada para 3 veículos' },
+                { time: '09:30', system: 'generators', event: 'Consumo elevado detectado Setor B' }
+            ];
+
+            container.innerHTML = activities.map(act => `
+                <div class="flex gap-3 items-start text-sm pb-3 border-b border-slate-800 last:border-0">
+                    <span class="text-slate-500 mono text-xs mt-0.5">${act.time}</span>
+                    <span class="px-2 py-0.5 rounded text-[10px] uppercase font-medium ${
+                        act.system === 'fleet' ? 'bg-blue-500/20 text-blue-400' :
+                        act.system === 'generators' ? 'bg-amber-500/20 text-amber-400' :
+                        'bg-purple-500/20 text-purple-400'
+                    }">${act.system}</span>
+                    <span class="text-slate-300 flex-1">${act.event}</span>
+                </div>
+            `).join('');
+        }
+
+        function toggleGlobalAlerts() {
+            const panel = document.getElementById('global-alerts-panel');
+            panel.classList.toggle('translate-x-full');
+        }
+
+        function saveUrls() {
+            config.urls.fleet = document.getElementById('url-fleet').value;
+            config.urls.generators = document.getElementById('url-generators').value;
+            config.urls.telecom = document.getElementById('url-telecom').value;
+            config.urls.reports = document.getElementById('url-reports').value;
+
+            localStorage.setItem('url-fleet', config.urls.fleet);
+            localStorage.setItem('url-generators', config.urls.generators);
+            localStorage.setItem('url-telecom', config.urls.telecom);
+            localStorage.setItem('url-reports', config.urls.reports);
+
+            const fbFields = ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+            fbFields.forEach(field => {
+                const val = document.getElementById(`fb-${field}`).value;
+                if (val) {
+                    localStorage.setItem(`firebase-${field}`, val);
+                    config.firebase[field] = val;
+                }
+            });
+
+            alert('Configurações salvas com sucesso! Recarregando para aplicar...');
+            window.location.reload();
+        }
+
+        function toggleAutoSync(checkbox) {
+            if (checkbox.checked) { startDataSync(); }
+            else if (database) {
+                database.ref('fleet').off();
+                database.ref('generators').off();
+                database.ref('telecom').off();
+                database.ref('reports').off();
+            }
+        }
+
+        function refreshAllConnections() {
+            const btn = document.querySelector('button[onclick="refreshAllConnections()"]');
+            if (btn) {
+                const icon = btn.querySelector('svg');
+                if (icon) icon.classList.add('animate-spin');
+            }
+            setTimeout(() => {
+                if (btn) {
+                    const icon = btn.querySelector('svg');
+                    if (icon) icon.classList.remove('animate-spin');
+                }
+                updateLastSync('fleet');
+                updateLastSync('generators');
+                updateLastSync('telecom');
+                updateLastSync('reports');
+            }, 1000);
+        }
+
+        function updateLastSync(module) {
+            const now = new Date().toLocaleTimeString('pt-BR');
+            const el = document.getElementById(`last-sync-${module}`);
+            if (el) el.textContent = now;
+        }
+
+        window.addEventListener('message', (event) => {
+            const allowedOrigins = [config.urls.fleet, config.urls.generators, config.urls.telecom, config.urls.reports]
+                .filter(url => url)
+                .map(url => { try { return new URL(url).origin; } catch(e) { return null; } })
+                .filter(o => o);
+
+            if (!allowedOrigins.includes(event.origin)) return;
+
+            const data = event.data;
+            if (data.type === 'ALERT') {
+                addGlobalAlert({ ...data.payload, time: 'Agora' });
+            } else if (data.type === 'METRICS_UPDATE') {
+                switch(data.source) {
+                    case 'fleet': updateFleetKPIs(data.metrics); break;
+                    case 'generators': updateGeneratorsKPIs(data.metrics); break;
+                    case 'telecom': updateTelecomKPIs(data.metrics); break;
+                    case 'reports': updateReportsKPIs(data.metrics); break;
+                }
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('url-fleet').value = config.urls.fleet;
+            document.getElementById('url-generators').value = config.urls.generators;
+            document.getElementById('url-telecom').value = config.urls.telecom;
+            document.getElementById('url-reports').value = config.urls.reports;
+
+            const fbFields = ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+            fbFields.forEach(field => {
+                const el = document.getElementById(`fb-${field}`);
+                if (el) el.value = localStorage.getItem(`firebase-${field}`) || config.firebase[field] || '';
+            });
+
+            const hash = window.location.hash.replace('#', '');
+            if (hash && ['fleet', 'generators', 'telecom', 'reports'].includes(hash)) {
+                switchModule(hash);
+            }
+            initFirebase();
+            updateActivityLog();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) { refreshAllConnections(); }
+        });
+    </script>
+</body>
+</html>
